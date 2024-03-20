@@ -1,11 +1,12 @@
 #include "kernel/types.h"
 #include "user/user.h"
+#include "kernel/param.h"
 
 int
 main(int argc, char *argv[])
 {
   char buf[20];
-  char* args[32];
+  char* args[MAXARG];
   args[0] = malloc(strlen(argv[0]) + 1);
   int arg_count;
   for (int i = 1; i < argc; i++) {
