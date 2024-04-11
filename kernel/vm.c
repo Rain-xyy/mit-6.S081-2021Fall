@@ -120,6 +120,47 @@ walkaddr(pagetable_t pagetable, uint64 va)
   return pa;
 }
 
+
+int uncopied_cow(pagetable_t pgtbl, uint64 va){
+  if(va >= MAXVA) 
+    return 0;
+  pte_t* pte = walk(pgtbl, va, 0);
+  if(pte == 0)          
+    return 0;
+  if((*pte & PTE_V) == 0)
+    return 0;
+  if((*pte & PTE_U) == 0)
+    return 0;
+  return ((*pte) & PTE_COW);
+}
+
+
+int cowalloc(pagetable_t pgtbl, uint64 va){
+  pte_t* pte = walk(pgtbl, va, 0);
+  uint64 flags = PTE_FLAGS(*pte);
+
+  if(pte == 0) return -1;
+  uint64 pa = PTE2PA(*pte); 
+                                  
+  void* ka = kalloc();     
+  if(ka == 0){
+    return -1;
+  }
+  va = PGROUNDDOWN(va);
+
+  flags &= (~PTE_COW); 
+  flags |= PTE_W; 
+
+  memmove(ka, (void *) pa, PGSIZE);
+  uvmunmap(pgtbl, va, 1, 1);
+  
+  if(mappages(pgtbl, va, PGSIZE, (uint64)ka, flags) < 0){
+    kfree((void *) ka);
+    return -1;
+  }
+  return 0;
+}
+
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
@@ -302,8 +343,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
-  uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,20 +350,17 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+    if (*pte & PTE_W) {
+      *pte ^= PTE_W; 
     }
+    *pte |= PTE_COW;
+    if(mappages(new, i, PGSIZE, (uint64)pa, PTE_FLAGS(*pte)) != 0){
+      uvmunmap(new, i, i / PGSIZE, 1);
+      return -1;
+    }
+    incr_pg_refcnt(pa, 1);
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -350,6 +386,12 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if(uncopied_cow(pagetable, va0)) {
+      if (cowalloc(pagetable, va0) < 0) {
+        return -1;
+      }
+    }
+
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
