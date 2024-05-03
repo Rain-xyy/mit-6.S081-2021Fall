@@ -1,4 +1,12 @@
-+ Spinlock is based on cas atomic operation, which is provided by hardware.
-+ Uthread: switching between threads
-    + Why do we need to simulate a stack in struct thread?
-        + The simulated stack (in .data area) is used to perform operations on. So each uthread can work on it's own stack.
+Uthread: switching between threads
++ thread_create: 
+    + set state RUNNABLE; 
+    + set ra the called function address; 
+    + set sp the address create in the data area in user space
++ thread_schedule
+    + find a runnable thread
+    + switch
+        + set current thread running
+        + save/restore user-space registers
+            + the restored ra will change the execution flow in user-space threads
+            + the restored sp represtants the user-space stack for user-space threads
