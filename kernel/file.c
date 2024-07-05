@@ -180,3 +180,14 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+int setoff(struct file *f, int off) {
+  f->off = off;
+  return 0;
+}
+
+int checkperm(struct file *f, int readable, int writeable, int mapshared) {
+  if ((f->readable == 0 && readable) || (mapshared && (f->writable == 0 && writeable))) {
+    return -1;
+  }
+  return 0;
+}

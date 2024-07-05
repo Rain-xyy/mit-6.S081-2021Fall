@@ -33,6 +33,8 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+int             setoff(struct file*, int);
+int             checkperm(struct file *f, int readable, int writeable, int mapshared);
 
 // fs.c
 void            fsinit(int);
@@ -104,6 +106,9 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+uint64          allocvma(int length, int prot, int flags, struct file* f, int offset);
+uint64          freevma(uint64 address, int length);
+uint64          freeallvmas();
 
 // swtch.S
 void            swtch(struct context*, struct context*);

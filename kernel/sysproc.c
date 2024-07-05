@@ -13,6 +13,7 @@ sys_exit(void)
   int n;
   if(argint(0, &n) < 0)
     return -1;
+  freeallvmas();
   exit(n);
   return 0;  // not reached
 }
@@ -94,4 +95,60 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// Fetch the nth word-sized system call argument as a file descriptor
+// and return both the descriptor and the corresponding struct file.
+static int
+argfd(int n, int *pfd, struct file **pf)
+{
+  int fd;
+  struct file *f;
+
+  if(argint(n, &fd) < 0)
+    return -1;
+  if(fd < 0 || fd >= NOFILE || (f=myproc()->ofile[fd]) == 0)
+    return -1;
+  if(pfd)
+    *pfd = fd;
+  if(pf)
+    *pf = f;
+  return 0;
+}
+
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int length;
+  int prot;
+  int flags;
+  struct file *f;
+  int offset;
+  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argfd(4, 0, &f) < 0 || argint(5, &offset) < 0)
+    return -1;
+  if (checkperm(f, prot & 0x1, prot & 0x2, flags & 0x01) == -1)
+    return -1;
+  filedup(f);
+
+  uint64 va = allocvma(length, prot, flags, f, offset);
+  if (va == 0) {
+    return -1;
+  }
+  return va;
+}
+
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int length;
+  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+    return -1;
+  
+  uint64 f = freevma(addr, length);
+  if (f != 0) {
+    fileclose((struct file *) f);
+  }
+  return 0;
 }

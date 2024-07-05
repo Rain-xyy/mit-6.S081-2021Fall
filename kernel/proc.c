@@ -301,6 +301,14 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  struct vma* vma = p->vmas;
+  for (i = 0; i < NVMA; i++) {
+    if (vma[i].isValid == 1) {
+      np->vmas[i] = vma[i];
+      filedup(np->vmas[i].f);
+    }
+  }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -653,4 +661,63 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+uint64 allocvma(int length, int prot, int flags, struct file *f, int offset) {
+  struct proc* p = myproc();
+  struct vma* vma = myproc()->vmas;
+  for (struct vma* v = vma; v < &vma[NVMA]; v++) {
+    if (v->isValid == 0) {
+      v->length = length;
+      v->prot = prot;
+      v->flags = flags;
+      v->f = f;
+      v->offset = offset;
+      v->isValid = 1;
+      v->address = p->sz;
+      p->sz = p->sz + length;
+      return v->address;
+    }
+  }
+  return 0;
+}
+
+uint64 freevma(uint64 address, int length) {
+  struct proc* p = myproc();
+  struct vma* vma = myproc()->vmas;
+  for (struct vma* v = vma; v < &vma[NVMA]; v++) {
+    if (v->isValid == 1 && v->address <= address && v->address + v->length > address) {
+      if (v->flags & 0x01) {
+        setoff(v->f, v->offset + address - v->address);
+        filewrite(v->f, address, length);
+      }
+      uvmunmap(p->pagetable, address, (length + PGSIZE - 1) / PGSIZE, 1);
+      if (v->address == address) {
+        v->address = v->address + length;
+      }
+      v->length = v->length - length;
+      if (v->length == 0) {
+        v->isValid = 0;
+        return (uint64)v->f;
+      }
+      break;
+    }
+  }
+  return 0;
+}
+
+uint64 freeallvmas() {
+  struct proc* p = myproc();
+  struct vma* vma = myproc()->vmas;
+  for (struct vma* v = vma; v < &vma[NVMA]; v++) {
+    if (v->isValid == 1) {
+      if (v->flags & 0x01) {
+        setoff(v->f, v->offset);
+        filewrite(v->f, v->address, v->length);
+      }
+      uvmunmap(p->pagetable, v->address, (v->length + PGSIZE - 1) / PGSIZE, 1);
+      v->isValid = 0;
+    }
+  }
+  return 0;
 }
